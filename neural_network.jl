@@ -87,7 +87,17 @@ end
 
 # Derivative of Softmax Function
 function desoftmax(p)
-    return [[pi == pj ? pi*(1 - pj) : -pi*pj for pj in p] for pi in p]
+    perr = zeros(10, 10)
+    for i = 1:10
+        for j = 1:10
+            if i == j
+                perr[i, j] = p[i]*(1 - p[j])
+            else
+                perr[i, j] = -p[i]*p[j]
+            end
+        end
+    end
+    return perr
 end
 
 # Calls the activation function
@@ -157,22 +167,28 @@ function forward_propagation(net::NeuralNet, x::Array{Float64})
 end
 
 # Backward Propagation for Neural Network
-function back_propagation!(net::NeuralNet, x::Array{Float64}, y::Array{Float64}; learning_rate=0.01)
-    z, a = forward_propagation(net, x)
-    loss = loss_function(a[end], y)
-    da = a[end] - y
+function back_propagation!(net::NeuralNet, y::Array{Float64}, z::Array{Array{Float64}}, a::Array{Array{Float64}}; learning_rate=0.01)
+    da = deloss_function(a[end], y)
     l = length(z)
     for i in l:-1:1
-        dz = @. da * deactivate(z[i], a[i + 1], net.layers[i].__activ__)
+        if net.layers[i].__activ__ == "softmax"
+            dz = deactivate(z[i], a[i + 1], net.layers[i].__activ__) * da
+        else
+            dz = @. da * deactivate(z[i], a[i + 1], net.layers[i].__activ__)
+        end
         dw = dz * transpose(a[i])
         db = dz
         da = transpose(net.__weights__[i]) * dz
         net.__weights__[i] -= learning_rate * dw
+        if size(dw) != size(net.__weights__[i])
+            println(size(dw), ' ', size(net.__weights__[i]))
+            error("Something has gone terribly wrong!")
+        end
         net.__biases__[i] -= learning_rate * db
     end
-    return loss
 end
 
+# Read images from file
 function read_image(path)
     println("Reading Images...")
     bytes = open(path) do file
@@ -193,6 +209,7 @@ function read_image(path)
     return images
 end
 
+# Read labels from file
 function read_label(path)
     bytes = open(path) do file
         read(file)
@@ -209,6 +226,7 @@ function read_label(path)
     return labels
 end
 
+# Read all the image and label files
 function read_data()
     x_train = read_image("train-images.idx3-ubyte")
     y_train = read_label("train-labels.idx1-ubyte")
@@ -217,6 +235,7 @@ function read_data()
     return x_train, y_train, x_test, y_test
 end
 
+# Returns the index of the maximum value
 function max_index(arr)
     max_val = 0
     index = 0
@@ -229,15 +248,17 @@ function max_index(arr)
     return index
 end
 
+# Creating and training neural net
 function main()
     Random.seed!(0)
     x_train, y_train, x_test, y_test = read_data()
-    model = NeuralNet([784, 1], Layer(20), Layer(10, "sigmoid"))
+    model = NeuralNet([784, 1], Layer(20), Layer(10, "softmax"))
     for i = 1:60000
         x, y = x_train[1:end, i], y_train[1:end, i]
-        loss = back_propagation!(model, x, y, learning_rate=0.065)
+        z, a = forward_propagation(model, x)
+        back_propagation!(model, y, z, a, learning_rate=0.0095)
         if i % 5000 == 0
-            println("loss = ", loss)
+            println("loss = ", loss_function(a[end], y))
         end
     end
     correct = 0
